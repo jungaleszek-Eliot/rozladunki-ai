@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="color-scheme" content="light">
+    <title>Rozładunki Surowców - v14.3 Voice AI Fast</title>
+    <style>
+        :root { color-scheme: light; --bg-color: #f4f4f4; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding-bottom: 90px; background-color: var(--bg-color); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s; }
+        
+        header { background-color: #1e1e1e; color: #fff; padding: 10px 15px; position: sticky; top: 0; z-index: 1000; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; justify-content: space-between; align-items: center; }
+        .header-left h1 { margin: 0; font-size: 1.15rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        #clock { font-size: 0.95rem; margin-top: 2px; color: #bbb; font-weight: bold; }
+        
+        .btn-api { background: #333; color: #fff; border: 1px solid #666; padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+        .api-dot { width: 10px; height: 10px; border-radius: 50%; background: #dc3545; display: inline-block; }
+        .api-dot.ok { background: #28a745; box-shadow: 0 0 6px #28a745; }
+
+        #api-panel { display: none; background: #2b2b2b; color: #fff; padding: 12px 15px; border-bottom: 2px solid #444; }
+        #api-panel .api-row { display: flex; gap: 8px; max-width: 800px; margin: 0 auto; flex-wrap: wrap; }
+        #api-panel input { flex: 1; min-width: 180px; padding: 10px; font-size: 0.95rem; border-radius: 6px; border: 1px solid #555; background: #111; color: #fff; text-transform: none; }
+        #api-panel button { padding: 10px 14px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; background: #28a745; color: #fff; }
+        #api-panel button.btn-test-api { background: #007bff; }
+        #api-panel small { display: block; max-width: 800px; margin: 6px auto 0; color: #bbb; font-size: 0.8rem; }
+        #api-test-result { max-width: 800px; margin: 6px auto 0; font-size: 0.85rem; font-weight: bold; color: #ffd700; }
+
+        .tabs { display: flex; flex-wrap: wrap; justify-content: center; background-color: #333; padding: 5px; gap: 5px; }
+        .tab-button { flex: 1 1 30%; padding: 13px 5px; border: none; cursor: pointer; font-weight: bold; font-size: 0.9rem; text-transform: uppercase; transition: 0.2s; background-color: #eee; color: #333; border-radius: 4px; }
+        .tab-button.active-maka { background-color: #ffebcd; border-bottom: 5px solid #d2691e; }
+        .tab-button.active-cukier { background-color: #e0ffff; border-bottom: 5px solid #00ced1; }
+        .tab-button.active-tluszcz { background-color: #fffacd; border-bottom: 5px solid #ffd700; }
+        .tab-button.active-d7 { background-color: #98fb98; border-bottom: 5px solid #228b22; }
+        .tab-button.active-merlin { background-color: #e6e6fa; border-bottom: 5px solid #8a2be2; }
+        .tab-button.active-neon { background-color: #ffcccb; border-bottom: 5px solid #ff0000; }
+
+        /* Voice Bar */
+        .voice-bar { max-width: 800px; width: 100%; margin: 10px auto 0; padding: 0 12px; box-sizing: border-box; }
+        .voice-controls { display: flex; gap: 8px; }
+        .btn-voice { flex: 1; padding: 16px; font-size: 1.05rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; background: linear-gradient(135deg, #d90429, #ef233c); color: #fff; box-shadow: 0 4px 10px rgba(217, 4, 41, 0.35); display: flex; align-items: center; justify-content: center; gap: 10px; transition: 0.2s; text-transform: uppercase; }
+        .btn-voice.recording { background: #111; animation: pulse 1.2s infinite; box-shadow: 0 0 0 4px rgba(239, 35, 60, 0.5); }
+        .btn-voice.processing { background: #0056b3; cursor: wait; }
+        .btn-cancel-ai { display: none; padding: 0 16px; font-size: 0.9rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; background: #444; color: #fff; text-transform: uppercase; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.015); } 100% { transform: scale(1); } }
+        #voice-status { text-align: center; font-size: 0.88rem; font-weight: bold; margin-top: 6px; color: #222; min-height: 18px; }
+
+        .tab-content { display: none; padding: 16px; max-width: 800px; margin: 8px auto 0; width: 100%; box-sizing: border-box; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); flex-grow: 1; }
+        .tab-header-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 15px; }
+        .tab-header-row h2 { margin: 0; font-size: 1.3rem; }
+        .badge-mode { font-size: 0.75rem; background: rgba(0,0,0,0.12); padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+
+        .form-grid { display: grid; gap: 12px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem; color: #000; }
+        input, textarea { width: 100%; padding: 11px; font-size: 1.1rem; border: 2px solid #666; border-radius: 6px; box-sizing: border-box; background-color: #ffffff; color: #000; transition: 0.2s; }
+        textarea { font-family: inherit; resize: vertical; min-height: 60px; text-transform: uppercase; }
+        input:focus, textarea:focus { border-color: #000; outline: none; box-shadow: 0 0 6px rgba(0,0,0,0.25); }
+        input[type="text"] { text-transform: uppercase; }
+        input.ai-filled { background-color: #e8f8ec !important; border-color: #28a745 !important; }
+
+        .time-row { display: flex; gap: 6px; }
+        .time-input { font-weight: bold; letter-spacing: 1.5px; text-align: center; }
+        .btn-now { padding: 0 12px; background: #333; color: #fff; border: none; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; white-space: nowrap; }
+
+        .seals-box { background: rgba(255,255,255,0.65); border: 2px solid #555; border-radius: 8px; padding: 12px; margin-top: 14px; }
+        .seals-title { font-weight: bold; font-size: 0.95rem; margin-bottom: 8px; color: #000; display: block; }
+        .seals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+        .photo-box { margin-top: 16px; border-top: 1px solid #888; padding-top: 12px; }
+        .btn-ocr { padding: 12px 14px; background: #ff8c00; color: #000; border: none; border-radius: 6px; font-weight: bold; font-size: 0.9rem; cursor: pointer; display: none; width: 100%; margin-top: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .photo-preview { width: 100%; max-height: 220px; object-fit: contain; margin-top: 10px; border: 1px solid #ccc; display: none; background-color: #333; border-radius: 6px; }
+
+        .criteria-box { margin-top: 16px; padding: 12px; border-radius: 8px; border: 2px dashed #444; background-color: rgba(255, 255, 255, 0.75); }
+        .criteria-box h3 { margin: 0 0 6px 0; font-size: 0.95rem; }
+        .criteria-box p { white-space: pre-wrap; line-height: 1.4; margin: 0 0 8px 0; font-size: 0.9rem; }
+
+        .action-bar { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+        .btn { width: 100%; padding: 15px; font-size: 0.95rem; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-transform: uppercase; color: #fff; box-shadow: 0 3px 6px rgba(0,0,0,0.2); }
+        .btn-sheets { background-color: #0f9d58; }
+        .btn-text { background-color: #007bff; }
+        .btn-save { background-color: #2c3e50; }
+        .btn-photo { background-color: #6f42c1; }
+        .btn-clear { background-color: #dc3545; }
+
+        #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #111; color: #fff; padding: 12px 20px; border-radius: 8px; font-weight: bold; font-size: 0.95rem; z-index: 2000; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.4); text-align: center; max-width: 90%; }
+
+        @media (min-width: 768px) {
+            .tab-button { flex: 1; }
+            .form-grid { grid-template-columns: 1fr 1fr; }
+            .action-bar { display: grid; grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body onload="initApp()">
+
+    <header>
+        <div class="header-left">
+            <h1>ROZŁADUNKI SUROWCÓW</h1>
+            <div id="clock">--:--</div>
+        </div>
+        <button class="btn-api" onclick="toggleApiPanel()">
+            <span id="api-dot" class="api-dot"></span> 🔑 KLUCZ API
+        </button>
+    </header>
+
+    <div id="api-panel">
+        <div class="api-row">
+            <input type="password" id="gemini-api-key" placeholder="Wklej klucz Google Gemini API (AIza...)" onchange="saveApiKey()">
+            <button onclick="saveApiKey()">ZAPISZ</button>
+            <button class="btn-test-api" onclick="testApiConnection()">🧪 TESTUJ</button>
+        </div>
+        <div id="api-test-result"></div>
+        <small>Model: <b>gemini-3.8-flash</b> (kompresja audio 32 kbps + limit czasu 25s).</small>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-button" onclick="openTab('maka', this, 'active-maka')">MĄKA</button>
+        <button class="tab-button" onclick="openTab('cukier', this, 'active-cukier')">CUKIER</button>
+        <button class="tab-button" onclick="openTab('tluszcz', this, 'active-tluszcz')">TŁUSZCZ</button>
+        <button class="tab-button" onclick="openTab('d7', this, 'active-d7')">D7</button>
+        <button class="tab-button" onclick="openTab('merlin', this, 'active-merlin')">MERLIN</button>
+        <button class="tab-button" onclick="openTab('neon', this, 'active-neon')">NEON</button>
+    </div>
+
+    <div class="voice-bar">
+        <div class="voice-controls">
+            <button id="btn-voice" class="btn-voice" onclick="toggleVoiceRecording()">
+                🎙️ DYKTUJ DANE (NACIŚNIJ I MÓW)
+            </button>
+            <button id="btn-cancel-ai" class="btn-cancel-ai" onclick="cancelActiveAIRequest()">
+                ✖ ANULUJ
+            </button>
+        </div>
+        <div id="voice-status"></div>
+    </div>
+
+    <div id="container"></div>
+    <div id="toast"></div>
+
+    <script>
+        const GEMINI_MODEL = 'gemini-3.8-flash';
+        const AI_TIMEOUT_MS = 25000; // Maksymalnie 25 sekund oczekiwania
+
+        let currentTabId = 'maka';
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+        let recordTimerInterval = null;
+        let recordSeconds = 0;
+
+        let activeAbortController = null;
+        let aiWaitTimerInterval = null;
+
+        const fullTabs = ['d7', 'merlin', 'neon'];
+        const autocompleteKeys = ['p0', 'p5', 'p6', 'p7', 'p8'];
+        let appHistory = JSON.parse(localStorage.getItem('rozladunki_history')) || {};
+
+        const tabsData = [
+            { id: 'maka', title: 'MĄKA', colorClass: 'active-maka', bgColor: '#fff3cd', criteria: '' },
+            { id: 'cukier', title: 'CUKIER', colorClass: 'active-cukier', bgColor: '#e0ffff', criteria: '' },
+            { id: 'tluszcz', title: 'TŁUSZCZ', colorClass: 'active-tluszcz', bgColor: '#fffacd', criteria: `<b>A. OLENEX:</b> CERTYFIKATE OF ANALYSIS - CUSTOMER ID: 36757811\n<b>B. AAK:</b> CERTYFIKATE OF ANALYSIS - ADRES: CIE , MATERIAL NUMBER: PL10501` },
+            { id: 'd7', title: 'D7', colorClass: 'active-d7', bgColor: '#d1e7dd', criteria: '' },
+            { id: 'merlin', title: 'MERLIN', colorClass: 'active-merlin', bgColor: '#e2d9f3', criteria: `<b>A. LORRACH:</b> ADRES: CIE, ARTIKEL: 417598\n<b>B. BRATYSŁAWA:</b> CERTYFIKATE OF ANALYSIS - ART. 427933` },
+            { id: 'neon', title: 'NEON', colorClass: 'active-neon', bgColor: '#f8d7da', criteria: `<b>A. SVOGE:</b> CERTYFIKATE OF ANALYSIS - ART. BG600003, NA DN ADRES CIE, PRODUCT CODE: BG600003\n<b>B. BARRY:</b> RAPORT JAKOŚCIOWY - ADRES: CIE, MATERIAŁ KLIENTA: 3071867` }
+        ];
+
+        function initApp() {
+            startClock();
+            checkApiKeyStatus();
+            initDataLists();
+            generateTabs();
+            const lastTab = localStorage.getItem('lastActiveTab') || 'maka';
+            const btn = document.querySelector(`button[onclick*="'${lastTab}'"]`);
+            if (btn) btn.click();
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.style.display = 'block';
+            clearTimeout(t._timer);
+            t._timer = setTimeout(() => { t.style.display = 'none'; }, 3500);
+        }
+
+        function toggleApiPanel() {
+            const p = document.getElementById('api-panel');
+            p.style.display = (p.style.display === 'block') ? 'none' : 'block';
+        }
+
+        function saveApiKey() {
+            const val = document.getElementById('gemini-api-key').value.trim();
+            if (val) {
+                localStorage.setItem('gemini_api_key', val);
+                showToast("✅ Klucz API zapisany!");
+            } else {
+                localStorage.removeItem('gemini_api_key');
+            }
+            checkApiKeyStatus();
+        }
+
+        function checkApiKeyStatus() {
+            const key = localStorage.getItem('gemini_api_key') || '';
+            document.getElementById('gemini-api-key').value = key;
+            const dot = document.getElementById('api-dot');
+            if (key.length > 10) dot.classList.add('ok');
+            else dot.classList.remove('ok');
+        }
+
+        async function testApiConnection() {
+            const apiKey = document.getElementById('gemini-api-key').value.trim();
+            const resBox = document.getElementById('api-test-result');
+            if (!apiKey) {
+                resBox.textContent = "⚠️ Najpierw wklej klucz API.";
+                return;
+            }
+            saveApiKey();
+            resBox.textContent = "⏳ Sprawdzam połączenie z Gemini...";
+            const t0 = performance.now();
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), 12000);
+
+            try {
+                const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: ctrl.signal,
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: "Odpowiedz jednym słowem: OK" }] }],
+                        generationConfig: { max_output_tokens: 10 }
+                    })
+                });
+                clearTimeout(tid);
+                const data = await resp.json();
+                const sec = ((performance.now() - t0) / 1000).toFixed(2);
+                if (!resp.ok) throw new Error(data.error?.message || `HTTP ${resp.status}`);
+                resBox.style.color = "#4ade80";
+                resBox.textContent = `✅ Połączenie działa! Czas odpowiedzi: ${sec} s`;
+            } catch (e) {
+                clearTimeout(tid);
+                resBox.style.color = "#f87171";
+                resBox.textContent = `❌ Błąd testu: ${e.name === 'AbortError' ? 'Brak odpowiedzi serwera (timeout 12s)' : e.message}`;
+            }
+        }
+
+        function startClock() {
+            const update = () => {
+                const now = new Date();
+                document.getElementById('clock').innerHTML = now.toLocaleDateString('pl-PL') + " " + now.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'});
+            };
+            update();
+            setInterval(update, 1000);
+        }
+
+        function setNowTime(btn) {
+            const input = btn.previousElementSibling;
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            input.value = `${hh}:${mm}`;
+            input.dispatchEvent(new Event('input'));
+        }
+
+        function initDataLists() {
+            autocompleteKeys.forEach(key => {
+                if (!appHistory[key]) appHistory[key] = [];
+                let datalist = document.createElement('datalist');
+                datalist.id = `list-${key}`;
+                document.body.appendChild(datalist);
+                updateDataListDOM(key);
+            });
+        }
+
+        function updateDataListDOM(key) {
+            const datalist = document.getElementById(`list-${key}`);
+            if (!datalist) return;
+            datalist.innerHTML = '';
+            appHistory[key].forEach(val => {
+                let option = document.createElement('option');
+                option.value = val;
+                datalist.appendChild(option);
+            });
+        }
+
+        function saveToHistory(key, value) {
+            if (!autocompleteKeys.includes(key)) return;
+            value = value.trim().toUpperCase();
+            if (!value || value.length < 2) return;
+            if (!appHistory[key].includes(value)) {
+                appHistory[key].push(value);
+                localStorage.setItem('rozladunki_history', JSON.stringify(appHistory));
+                updateDataListDOM(key);
+            }
+        }
+
+        function formatTimeInput(input) {
+            let val = input.value.replace(/\D/g, '');
+            if (val.length > 4) val = val.slice(0, 4);
+            input.value = (val.length >= 3) ? (val.slice(0, 2) + ':' + val.slice(2)) : val;
+        }
+
+        function generateTabs() {
+            const container = document.getElementById('container');
+            tabsData.forEach(tab => {
+                const isFull = fullTabs.includes(tab.id);
+                const div = document.createElement('div');
+                div.id = tab.id;
+                div.className = 'tab-content';
+
+                const fullFieldsHTML = isFull ? `
+                    <div class="form-group">
+                        <label>2. PLANOWANA GODZ. ROZŁADUNKU</label>
+                        <div class="time-row">
+                            <input type="text" inputmode="numeric" class="time-input" placeholder="GG:MM" data-key="p1" oninput="formatTimeInput(this)">
+                            <button type="button" class="btn-now" onclick="setNowTime(this)">TERAZ</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>3. GODZ. ZGŁOSZENIA KIEROWCY</label>
+                        <div class="time-row">
+                            <input type="text" inputmode="numeric" class="time-input" placeholder="GG:MM" data-key="p2" oninput="formatTimeInput(this)">
+                            <button type="button" class="btn-now" onclick="setNowTime(this)">TERAZ</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>4. GODZ. START ROZŁADUNKU</label>
+                        <div class="time-row">
+                            <input type="text" inputmode="numeric" class="time-input" placeholder="GG:MM" data-key="p3" oninput="formatTimeInput(this)">
+                            <button type="button" class="btn-now" onclick="setNowTime(this)">TERAZ</button>
+                        </div>
+                    </div>
+                    <div class="form-group"><label>5. REJESTRACJA CIĄGNIKA</label><input type="text" data-key="p5" list="list-p5"></div>
+                    <div class="form-group"><label>6. REJESTRACJA CYSTERNY</label><input type="text" data-key="p6" list="list-p6"></div>
+                    <div class="form-group"><label>7. NAZWA FIRMY PRZEWOZOWEJ</label><input type="text" data-key="p7" list="list-p7"></div>
+                    <div class="form-group"><label>8. IMIĘ I NAZWISKO KIEROWCY</label><input type="text" data-key="p8" list="list-p8"></div>
+                    <div class="form-group"><label>9. DATA MYCIA CYSTERNY</label><input type="date" data-key="p10"></div>
+                    <div class="form-group"><label>10. TEMP. ZAŁADUNKU (°C)</label><input type="number" step="0.1" data-key="p11" placeholder="np. 50.5"></div>
+                    <div class="form-group"><label>11. TEMP. PŁASZCZA WODNEGO (°C)</label><input type="number" step="0.1" data-key="p12" placeholder="np. 60.0"></div>
+                    <div class="form-group"><label>12. TEMP. ROZŁADUNKU (°C)</label><input type="number" step="0.1" data-key="p13" placeholder="np. 55.2"></div>
+                ` : `
+                    <div class="form-group"><label>2. REJESTRACJA CIĄGNIKA</label><input type="text" data-key="p5" list="list-p5"></div>
+                    <div class="form-group"><label>3. REJESTRACJA CYSTERNY</label><input type="text" data-key="p6" list="list-p6"></div>
+                    <div class="form-group"><label>4. IMIĘ I NAZWISKO KIEROWCY</label><input type="text" data-key="p8" list="list-p8"></div>
+                    <div class="form-group"><label>5. DATA MYCIA CYSTERNY</label><input type="date" data-key="p10"></div>
+                `;
+
+                const criteriaHTML = tab.criteria ? `
+                    <div class="criteria-box">
+                        <h3>KRYTERIA JAKOŚCIOWE: ${tab.title}</h3>
+                        <p>${tab.criteria.replace(/\n/g, '<br>')}</p>
+                        <label style="display:inline-flex; align-items:center; font-weight:bold; cursor:pointer;">
+                            <input type="checkbox" id="check-${tab.id}" style="width:24px; height:24px; margin-right:10px;"> POTWIERDZAM ZGODNOŚĆ
+                        </label>
+                    </div>
+                ` : `
+                    <div class="criteria-box" style="padding:10px;">
+                        <label style="display:inline-flex; align-items:center; font-weight:bold; cursor:pointer; margin:0;">
+                            <input type="checkbox" id="check-${tab.id}" style="width:24px; height:24px; margin-right:10px;"> POTWIERDZAM ZGODNOŚĆ DOKUMENTÓW
+                        </label>
+                    </div>
+                `;
+
+                div.innerHTML = `
+                    <div class="tab-header-row">
+                        <h2>${tab.title}</h2>
+                        <span class="badge-mode">${isFull ? 'PEŁNY FORMULARZ' : 'FORMULARZ SKRÓCONY'}</span>
+                    </div>
+                    <form id="form-${tab.id}">
+                        <div class="form-grid">
+                            <div class="form-group"><label>1. NAZWA DOSTAWCY</label><input type="text" data-key="p0" list="list-p0"></div>
+                            ${fullFieldsHTML}
+                            <div class="form-group"><label>📄 NUMER DOWODU DOSTAWY (WZ/CMR)</label><input type="text" data-key="nr_dowodu" placeholder="np. WZ 1234/2026"></div>
+                            <div class="form-group"><label>⚖️ ILOŚĆ DEKLAROWANA (KG)</label><input type="number" step="0.01" data-key="p4" placeholder="np. 24000"></div>
+                        </div>
+
+                        <div class="seals-box">
+                            <span class="seals-title">🔒 NUMERY PLOMB (PODZIAŁ)</span>
+                            <div class="seals-grid">
+                                <div class="form-group">
+                                    <label>PLOMBY – ZAWÓR</label>
+                                    <input type="text" data-key="plomby_zawor" placeholder="np. 441, 442">
+                                </div>
+                                <div class="form-group">
+                                    <label>PLOMBY – WĘŻE</label>
+                                    <input type="text" data-key="plomby_weze" placeholder="np. 501, 502, 503">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="photo-box">
+                            <label style="font-weight:bold; display:block; margin-bottom:6px;">📸 ZDJĘCIE DOKUMENTU / WZ</label>
+                            <input type="file" accept="image/*" capture="environment" id="file-${tab.id}" onchange="previewImage(this, '${tab.id}')">
+                            <button type="button" id="btn-ocr-${tab.id}" class="btn-ocr" onclick="processPhotoWithAI('${tab.id}')">✨ ODCZYTAJ DANE ZE ZDJĘCIA (AI)</button>
+                            <img id="preview-${tab.id}" class="photo-preview">
+                        </div>
+
+                        ${criteriaHTML}
+                    </form>
+
+                    <div class="action-bar">
+                        <button class="btn btn-sheets" onclick="copyRowForSheets('${tab.id}', '${tab.title}')">📋 KOPIUJ WIERSZ (SHEETS/EXCEL)</button>
+                        <button class="btn btn-text" onclick="shareTextData('${tab.id}', '${tab.title}')">📝 KOPIUJ / WYŚLIJ RAPORT (WORD)</button>
+                        <button class="btn btn-save" onclick="downloadCSV('${tab.id}', '${tab.title}')">💾 ZAPISZ PLIK CSV</button>
+                        <button class="btn btn-photo" onclick="sharePhotoData('${tab.id}')">📸 WYŚLIJ ZDJĘCIE</button>
+                        <button class="btn btn-clear" style="grid-column: 1 / -1;" onclick="clearForm('${tab.id}')">🗑️ WYCZYŚĆ FORMULARZ</button>
+                    </div>
+                `;
+                container.appendChild(div);
+
+                const inputs = div.querySelectorAll('input:not([type="file"]), textarea');
+                inputs.forEach((input, index) => {
+                    input.addEventListener('input', () => {
+                        input.classList.remove('ai-filled');
+                        saveData(tab.id);
+                    });
+                    input.addEventListener('change', () => {
+                        if (input.dataset.key) saveToHistory(input.dataset.key, input.value);
+                        saveData(tab.id);
+                    });
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' && input.tagName !== 'TEXTAREA') {
+                            e.preventDefault();
+                            if (input.dataset.key) saveToHistory(input.dataset.key, input.value);
+                            const next = inputs[index + 1];
+                            if (next) next.focus(); else input.blur();
+                        }
+                    });
+                });
+            });
+        }
+
+        function previewImage(input, tabId) {
+            const preview = document.getElementById(`preview-${tabId}`);
+            const ocrBtn = document.getElementById(`btn-ocr-${tabId}`);
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                    ocrBtn.style.display = 'block';
+                };
+                reader.readAsDataURL(input.files[0]);
+            } else {
+                preview.style.display = 'none';
+                ocrBtn.style.display = 'none';
+            }
+        }
+
+        function openTab(tabId, btnElement, activeClass) {
+            currentTabId = tabId;
+            localStorage.setItem('lastActiveTab', tabId);
+            document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+            document.querySelectorAll('.tab-button').forEach(b => b.className = 'tab-button');
+            const active = document.getElementById(tabId);
+            active.style.display = 'block';
+            btnElement.classList.add(activeClass);
+            const color = tabsData.find(t => t.id === tabId).bgColor;
+            document.body.style.backgroundColor = color;
+            active.style.backgroundColor = color;
+            loadData(tabId);
+        }
+
+        function saveData(tabId) {
+            const inputs = document.querySelectorAll(`#${tabId} input, #${tabId} textarea`);
+            const data = {};
+            inputs.forEach(i => {
+                if (i.type === 'file') return;
+                if (i.type === 'checkbox') data[i.id] = i.checked;
+                else if (i.dataset.key) data[i.dataset.key] = i.value;
+            });
+            localStorage.setItem('rozladunki_data_' + tabId, JSON.stringify(data));
+        }
+
+        function loadData(tabId) {
+            const saved = localStorage.getItem('rozladunki_data_' + tabId);
+            if (saved) {
+                const data = JSON.parse(saved);
+                document.querySelectorAll(`#${tabId} input, #${tabId} textarea`).forEach(i => {
+                    if (i.type === 'file') return;
+                    if (i.type === 'checkbox') {
+                        if (data[i.id] !== undefined) i.checked = data[i.id];
+                    } else {
+                        const k = i.dataset.key;
+                        if (k && data[k] !== undefined) i.value = data[k];
+                    }
+                });
+            }
+        }
+
+        function clearForm(tabId) {
+            if (confirm("Wyczyścić formularz? Zapisana historia podpowiedzi pozostanie bez zmian.")) {
+                document.querySelectorAll(`#${tabId} input, #${tabId} textarea`).forEach(i => {
+                    i.classList.remove('ai-filled');
+                    if (i.type === 'checkbox') i.checked = false;
+                    else if (i.type !== 'file') i.value = '';
+                });
+                const fileInp = document.getElementById(`file-${tabId}`);
+                if (fileInp) fileInp.value = '';
+                document.getElementById(`preview-${tabId}`).style.display = 'none';
+                document.getElementById(`btn-ocr-${tabId}`).style.display = 'none';
+                localStorage.removeItem('rozladunki_data_' + tabId);
+                showToast("🗑️ Formularz wyczyszczony");
+            }
+        }
+
+        // ================= VOICE RECORDING & GEMINI AI =================
+        function cancelActiveAIRequest() {
+            if (activeAbortController) {
+                activeAbortController.abort();
+                activeAbortController = null;
+            }
+            clearInterval(aiWaitTimerInterval);
+            document.getElementById('btn-cancel-ai').style.display = 'none';
+            const btn = document.getElementById('btn-voice');
+            btn.classList.remove('processing');
+            btn.innerHTML = '🎙️ DYKTUJ DANE (NACIŚNIJ I MÓW)';
+            document.getElementById('voice-status').textContent = '⏹️ Przerwano analizę.';
+        }
+
+        async function toggleVoiceRecording() {
+            const apiKey = localStorage.getItem('gemini_api_key');
+            if (!apiKey) {
+                toggleApiPanel();
+                showToast("⚠️ Najpierw wpisz klucz Google Gemini API!");
+                return;
+            }
+
+            if (activeAbortController) {
+                showToast("⏳ Trwa analiza poprzedniego nagrania – kliknij ANULUJ, jeśli chcesz przerwać.");
+                return;
+            }
+
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }
+                    });
+
+                    let mimeType = '';
+                    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+                    else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+                    else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+
+                    // Kompresja 32 kbps: plik 4-5x mniejszy i błyskawiczny w wysyłce przez LTE/Wi-Fi
+                    const options = { audioBitsPerSecond: 32000 };
+                    if (mimeType) options.mimeType = mimeType;
+
+                    mediaRecorder = new MediaRecorder(stream, options);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = e => {
+                        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        stream.getTracks().forEach(track => track.stop());
+                        const cleanMime = (mimeType || 'audio/webm').split(';')[0];
+                        const audioBlob = new Blob(audioChunks, { type: cleanMime });
+                        if (audioBlob.size < 500) {
+                            document.getElementById('voice-status').textContent = '⚠️ Nagranie było za krótkie lub puste.';
+                            return;
+                        }
+                        await sendAudioToGemini(audioBlob, cleanMime, apiKey);
+                    };
+
+                    mediaRecorder.start(250);
+                    isRecording = true;
+                    recordSeconds = 0;
+                    const btn = document.getElementById('btn-voice');
+                    btn.classList.add('recording');
+                    btn.innerHTML = '⏹️ STOP I WYPEŁNIJ (00:00)';
+                    document.getElementById('voice-status').textContent = 'Słucham... Dyktuj dane dostawy (np. dostawca, rejestracje, kierowca, mycie, dowód, plomby, ilość).';
+
+                    recordTimerInterval = setInterval(() => {
+                        recordSeconds++;
+                        const m = String(Math.floor(recordSeconds / 60)).padStart(2, '0');
+                        const s = String(recordSeconds % 60).padStart(2, '0');
+                        btn.innerHTML = `⏹️ STOP I WYPEŁNIJ (${m}:${s})`;
+                    }, 1000);
+                } catch (err) {
+                    alert("Brak dostępu do mikrofonu: " + err.message);
+                }
+            } else {
+                clearInterval(recordTimerInterval);
+                isRecording = false;
+                const btn = document.getElementById('btn-voice');
+                btn.classList.remove('recording');
+                btn.innerHTML = '🎙️ DYKTUJ DANE (NACIŚNIJ I MÓW)';
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                }
+            }
+        }
+
+        function blobToBase64(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        function cleanJsonResponse(rawText) {
+            return rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+        }
+
+        function getGeminiPrompt() {
+            const today = new Date().toISOString().split('T')[0];
+            return `Asystent magazynu. Data: ${today}. Wyciągnij dane z nagrania/zdjęcia do JSON (bez markdown, null gdy brak):
+{"surowiec":"maka|cukier|tluszcz|d7|merlin|neon|null","p0":"DOSTAWCA","p1":"HH:MM planowana","p2":"HH:MM zgloszenie","p3":"HH:MM start","p5":"REJ CIAGNIKA","p6":"REJ CYSTERNY","p7":"PRZEWOZNIK","p8":"KIEROWCA","p10":"YYYY-MM-DD data mycia","p11":"temp zaladunku liczba","p12":"temp plaszcza liczba","p13":"temp rozladunku liczba","nr_dowodu":"NR DOWODU WZ/CMR","plomby_zawor":"PLOMBY ZAWOR","plomby_weze":"PLOMBY WEZE","p4":"ILOSC W KG liczba","zgodnosc":true}`;
+        }
+
+        async function sendAudioToGemini(audioBlob, mimeType, apiKey) {
+            const btn = document.getElementById('btn-voice');
+            const cancelBtn = document.getElementById('btn-cancel-ai');
+            const status = document.getElementById('voice-status');
+            const sizeKB = Math.max(1, Math.round(audioBlob.size / 1024));
+
+            btn.classList.add('processing');
+            btn.innerHTML = '⏳ ANALIZUJĘ GŁOS (AI)...';
+            cancelBtn.style.display = 'block';
+
+            let waitSec = 0;
+            status.textContent = `📤 Wysyłam nagranie (${sizeKB} KB) i czekam na AI... 0s / 25s`;
+            clearInterval(aiWaitTimerInterval);
+            aiWaitTimerInterval = setInterval(() => {
+                waitSec++;
+                status.textContent = `⏳ Przetwarzam nagranie (${sizeKB} KB)... ${waitSec}s / 25s`;
+            }, 1000);
+
+            activeAbortController = new AbortController();
+            const timeoutId = setTimeout(() => {
+                if (activeAbortController) activeAbortController.abort();
+            }, AI_TIMEOUT_MS);
+
+            try {
+                const base64Audio = await blobToBase64(audioBlob);
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: getGeminiPrompt() },
+                            { inline_data: { mime_type: mimeType, data: base64Audio } }
+                        ]
+                    }],
+                    generationConfig: {
+                        response_mime_type: "application/json",
+                        temperature: 0.1,
+                        max_output_tokens: 512
+                    }
+                };
+
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: activeAbortController.signal,
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error?.message || `Błąd HTTP ${response.status}`);
+
+                const rawText = result.candidates[0].content.parts[0].text;
+                const parsed = JSON.parse(cleanJsonResponse(rawText));
+                applyAIDataToForm(parsed);
+                status.textContent = `✅ Gotowe w ${waitSec}s! Dane wpisane – sprawdź podświetlone pola.`;
+            } catch (err) {
+                console.error(err);
+                if (err.name === 'AbortError') {
+                    status.textContent = '⏱️ Przekroczono czas (25s) lub przerwano – słaby zasięg internetu. Spróbuj ponownie.';
+                    showToast('⏱️ Przekroczono czas oczekiwania (25s).');
+                } else {
+                    status.textContent = '❌ Błąd: ' + err.message;
+                    showToast('❌ Błąd: ' + err.message);
+                }
+            } finally {
+                clearTimeout(timeoutId);
+                clearInterval(aiWaitTimerInterval);
+                activeAbortController = null;
+                cancelBtn.style.display = 'none';
+                btn.classList.remove('processing');
+                btn.innerHTML = '🎙️ DYKTUJ DANE (NACIŚNIJ I MÓW)';
+            }
+        }
+
+        async function processPhotoWithAI(tabId) {
+            const apiKey = localStorage.getItem('gemini_api_key');
+            if (!apiKey) {
+                toggleApiPanel();
+                showToast("⚠️ Najpierw wpisz klucz Google Gemini API!");
+                return;
+            }
+            const fileInput = document.getElementById(`file-${tabId}`);
+            if (!fileInput || !fileInput.files[0]) return;
+
+            const ocrBtn = document.getElementById(`btn-ocr-${tabId}`);
+            const origText = ocrBtn.innerHTML;
+            ocrBtn.innerHTML = '⏳ ANALIZUJĘ ZDJĘCIE (MAX 25S)...';
+            ocrBtn.disabled = true;
+
+            const ctrl = new AbortController();
+            const timeoutId = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
+
+            try {
+                const resizedBase64 = await resizeImageToBase64(fileInput.files[0], 1200);
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: getGeminiPrompt() },
+                            { inline_data: { mime_type: 'image/jpeg', data: resizedBase64 } }
+                        ]
+                    }],
+                    generationConfig: {
+                        response_mime_type: "application/json",
+                        temperature: 0.1,
+                        max_output_tokens: 512
+                    }
+                };
+
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: ctrl.signal,
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error?.message || `Błąd HTTP ${response.status}`);
+
+                const rawText = result.candidates[0].content.parts[0].text;
+                const parsed = JSON.parse(cleanJsonResponse(rawText));
+                applyAIDataToForm(parsed, tabId);
+                showToast("✅ Odczytano dane ze zdjęcia WZ!");
+            } catch (err) {
+                const msg = err.name === 'AbortError' ? 'Przekroczono czas (25s) – słaby zasięg.' : err.message;
+                showToast("❌ Błąd odczytu zdjęcia: " + msg);
+            } finally {
+                clearTimeout(timeoutId);
+                ocrBtn.innerHTML = origText;
+                ocrBtn.disabled = false;
+            }
+        }
+
+        function resizeImageToBase64(file, maxDim) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const reader = new FileReader();
+                reader.onload = e => { img.src = e.target.result; };
+                reader.onerror = reject;
+                img.onload = () => {
+                    let w = img.width, h = img.height;
+                    if (w > maxDim || h > maxDim) {
+                        if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+                        else { w = Math.round(w * maxDim / h); h = maxDim; }
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', 0.80).split(',')[1]);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function applyAIDataToForm(data, forcedTabId = null) {
+            let targetTab = forcedTabId || currentTabId;
+            if (!forcedTabId && data.surowiec) {
+                const norm = data.surowiec.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                const validIds = ['maka', 'cukier', 'tluszcz', 'd7', 'merlin', 'neon'];
+                if (validIds.includes(norm) && norm !== currentTabId) {
+                    const tabBtn = document.querySelector(`button[onclick*="'${norm}'"]`);
+                    if (tabBtn) tabBtn.click();
+                    targetTab = norm;
+                }
+            }
+
+            let updatedCount = 0;
+            Object.keys(data).forEach(key => {
+                if (key === 'surowiec' || data[key] === null || data[key] === '') return;
+                if (key === 'zgodnosc' && data[key] === true) {
+                    const chk = document.getElementById(`check-${targetTab}`);
+                    if (chk) { chk.checked = true; updatedCount++; }
+                    return;
+                }
+                const input = document.querySelector(`#${targetTab} [data-key="${key}"]`);
+                if (input) {
+                    const val = String(data[key]).toUpperCase();
+                    input.value = val;
+                    input.classList.add('ai-filled');
+                    saveToHistory(key, val);
+                    updatedCount++;
+                }
+            });
+
+            saveData(targetTab);
+            showToast(`✨ Uzupełniono ${updatedCount} pól w zakładce ${targetTab.toUpperCase()}`);
+        }
+
+        // ================= EXPORT & COPY FOR SHEETS / WORD / CSV =================
+        function getOrderedFields(tabId) {
+            const isFull = fullTabs.includes(tabId);
+            const baseStart = [
+                { key: 'p0', label: 'NAZWA DOSTAWCY' }
+            ];
+            const middle = isFull ? [
+                { key: 'p1', label: 'PLANOWANA GODZ.' },
+                { key: 'p2', label: 'GODZ. ZGŁOSZENIA' },
+                { key: 'p3', label: 'GODZ. START' },
+                { key: 'p5', label: 'REJ. CIĄGNIKA' },
+                { key: 'p6', label: 'REJ. CYSTERNY' },
+                { key: 'p7', label: 'PRZEWOŹNIK' },
+                { key: 'p8', label: 'KIEROWCA' },
+                { key: 'p10', label: 'DATA MYCIA' },
+                { key: 'p11', label: 'TEMP. ZAŁADUNKU' },
+                { key: 'p12', label: 'TEMP. PŁASZCZA' },
+                { key: 'p13', label: 'TEMP. ROZŁADUNKU' }
+            ] : [
+                { key: 'p5', label: 'REJ. CIĄGNIKA' },
+                { key: 'p6', label: 'REJ. CYSTERNY' },
+                { key: 'p8', label: 'KIEROWCA' },
+                { key: 'p10', label: 'DATA MYCIA' }
+            ];
+            const end = [
+                { key: 'nr_dowodu', label: 'NR DOWODU DOSTAWY' },
+                { key: 'plomby_zawor', label: 'PLOMBY - ZAWÓR' },
+                { key: 'plomby_weze', label: 'PLOMBY - WĘŻE' },
+                { key: 'p4', label: 'ILOŚĆ DEKLAROWANA' }
+            ];
+
+            const fields = [...baseStart, ...middle, ...end].map(f => {
+                const el = document.querySelector(`#${tabId} [data-key="${f.key}"]`);
+                return { label: f.label, value: el ? el.value.trim().toUpperCase() : '' };
+            });
+
+            const check = document.getElementById(`check-${tabId}`);
+            fields.push({ label: 'ZGODNOŚĆ', value: (check && check.checked) ? 'TAK' : 'NIE' });
+            return fields;
+        }
+
+        function copyRowForSheets(tabId, tabName) {
+            const today = new Date().toLocaleDateString('pl-PL');
+            const fields = getOrderedFields(tabId);
+            const rowValues = [today, tabName, ...fields.map(f => f.value.replace(/\t|\n/g, ' '))];
+            const tsv = rowValues.join('\t');
+
+            navigator.clipboard.writeText(tsv).then(() => {
+                showToast("📋 Skopiowano wiersz! Wklej (Ctrl+V) bezpośrednio do Google Sheets / Excela.");
+            }).catch(() => {
+                alert("Skopiuj ręcznie:\n" + tsv);
+            });
+        }
+
+        async function shareTextData(tabId, tabName) {
+            const fields = getOrderedFields(tabId);
+            let text = `PROTOKÓŁ PRZYJĘCIA: ${tabName}\nDATA: ${new Date().toLocaleDateString('pl-PL')}\n------------------------\n`;
+            fields.forEach(f => {
+                text += `${f.label}: ${f.value || 'BRAK'}\n`;
+            });
+
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast("📝 Skopiowano gotowy raport do schowka (wklej do Worda / protokołu).");
+            } catch (e) {}
+
+            if (navigator.share) {
+                try { await navigator.share({ title: `Rozładunek ${tabName}`, text: text }); } catch (err) {}
+            }
+        }
+
+        async function sharePhotoData(tabId) {
+            const fileInput = document.getElementById(`file-${tabId}`);
+            if (!fileInput || fileInput.files.length === 0) {
+                showToast("⚠️ Najpierw zrób lub wybierz zdjęcie!");
+                return;
+            }
+            if (navigator.share) {
+                try { await navigator.share({ files: [fileInput.files[0]] }); } catch (err) {}
+            } else {
+                alert("Udostępnianie plików nie jest obsługiwane w tej przeglądarce.");
+            }
+        }
+
+        function downloadCSV(tabId, tabName) {
+            const fields = getOrderedFields(tabId);
+            let csv = "\uFEFFParametr;Wartość\n";
+            csv += `SUROWIEC;${tabName}\n`;
+            csv += `DATA;${new Date().toLocaleDateString('pl-PL')}\n`;
+            fields.forEach(f => {
+                csv += `${f.label};${f.value.replace(/;/g, ',')}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `Rozladunek_${tabName}_${new Date().toISOString().slice(0,10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
