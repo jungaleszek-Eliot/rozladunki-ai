@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="color-scheme" content="light">
-    <title>Rozładunki Surowców - v16 Hybrid Fast AI</title>
+    <title>Rozładunki Surowców - v17 Auto-Fallback AI</title>
     <style>
         :root { color-scheme: light; --bg-color: #f4f4f4; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding-bottom: 90px; background-color: var(--bg-color); display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.3s; }
@@ -113,7 +113,7 @@
             <button class="btn-test-api" onclick="testApiConnection()">🧪 TESTUJ</button>
         </div>
         <div id="api-test-result"></div>
-        <small id="active-model-info">Aktywny model: <b>auto-wykrywanie Flash</b> (hybryda: tekst + audio 16 kbps + tryb offline).</small>
+        <small id="active-model-info">Wersja <b>v17 Auto-Fallback</b> (automatyczna zmiana modelu przy przeciążeniu + tryb offline).</small>
     </div>
 
     <div class="tabs">
@@ -146,7 +146,12 @@
     <div id="toast"></div>
 
     <script>
-        const DEFAULT_MODEL = 'gemini-2.5-flash';
+        const FALLBACK_MODELS = [
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-lite'
+        ];
         const AI_TIMEOUT_MS = 18000;
 
         let currentTabId = 'maka';
@@ -155,11 +160,9 @@
         let recordTimerInterval = null;
         let recordSeconds = 0;
 
-        // Web Speech API (Fast Text + Offline fallback)
         let speechRecognition = null;
         let recognizedTextBuffer = '';
 
-        // MediaRecorder (Full Audio fallback)
         let mediaRecorder = null;
         let audioChunks = [];
 
@@ -191,14 +194,17 @@
             if (btn) btn.click();
         }
 
-        function getActiveModel() {
-            return localStorage.getItem('gemini_detected_model') || DEFAULT_MODEL;
+        function getCandidateModels() {
+            const preferred = localStorage.getItem('gemini_detected_model');
+            const list = preferred ? [preferred, ...FALLBACK_MODELS] : [...FALLBACK_MODELS];
+            return [...new Set(list)];
         }
 
         function updateModelLabel() {
             const info = document.getElementById('active-model-info');
             if (info) {
-                info.innerHTML = `Aktywny model: <b>${getActiveModel()}</b> (hybryda: tekst 0 KB + audio 16 kbps + tryb offline).`;
+                const topModel = getCandidateModels()[0];
+                info.innerHTML = `Wersja <b>v17 Auto-Fallback</b> | Główny model: <b>${topModel}</b> (automatyczne przełączanie przy przeciążeniu + tryb offline).`;
             }
         }
 
@@ -213,7 +219,7 @@
             if (!silent) {
                 document.getElementById('voice-status').textContent = mode === 'fast'
                     ? 'Tryb szybki: zamienia głos na tekst w telefonie (działa też bez internetu).'
-                    : 'Tryb Audio AI: wysyła skompresowane nagranie (16 kbps) bezpośrednio do Gemini.';
+                    : 'Tryb Audio AI: wysyła skompresowane nagranie (16 kbps) z auto-przełączaniem modeli.';
             }
         }
 
@@ -251,29 +257,65 @@
             else dot.classList.remove('ok');
         }
 
-        async function detectBestFlashModel(apiKey, signal) {
-            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`, {
-                method: 'GET',
-                signal
-            });
-            const data = await resp.json();
-            if (!resp.ok) throw new Error(data.error?.message || `HTTP ${resp.status}`);
-            const models = (data.models || [])
-                .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-                .map(m => m.name.replace('models/', ''));
+        function isRetryableModelError(status, message) {
+            const low = (message || '').toLowerCase();
+            return status === 503 || status === 429 || status === 404 ||
+                   low.includes('high demand') || low.includes('overloaded') ||
+                   low.includes('unavailable') || low.includes('quota') ||
+                   low.includes('not found') || low.includes('not supported');
+        }
 
-            const preferredOrder = [
-                'gemini-2.5-flash',
-                'gemini-2.0-flash',
-                'gemini-2.0-flash-lite',
-                'gemini-1.5-flash'
-            ];
-            for (const pref of preferredOrder) {
-                const found = models.find(m => m === pref || m.startsWith(pref));
-                if (found) return found;
+        async function callGeminiWithFallback(apiKey, parts, jsonMode = true, signal = null, onStatus = null) {
+            const candidates = getCandidateModels();
+            let lastError = null;
+
+            for (let i = 0; i < candidates.length; i++) {
+                const model = candidates[i];
+                if (onStatus) {
+                    onStatus(i === 0 ? `Łączę z ${model}...` : `Przeciążenie – przełączam na ${model}...`);
+                }
+
+                const genConfig = {
+                    temperature: 0.1,
+                    max_output_tokens: jsonMode ? 400 : 15
+                };
+                if (jsonMode) genConfig.response_mime_type = "application/json";
+                if (model.includes('2.5') || model.includes('3.')) {
+                    genConfig.thinkingConfig = { thinkingBudget: 0 };
+                }
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        signal,
+                        body: JSON.stringify({
+                            contents: [{ parts }],
+                            generationConfig: genConfig
+                        })
+                    });
+
+                    const result = await response.json();
+                    if (!response.ok) {
+                        const errMsg = result.error?.message || `HTTP ${response.status}`;
+                        if (isRetryableModelError(response.status, errMsg) && i < candidates.length - 1) {
+                            lastError = new Error(`${model}: ${errMsg}`);
+                            continue;
+                        }
+                        throw new Error(errMsg);
+                    }
+
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    localStorage.setItem('gemini_detected_model', model);
+                    updateModelLabel();
+                    return { text, model };
+                } catch (err) {
+                    if (err.name === 'AbortError') throw err;
+                    lastError = err;
+                    if (i === candidates.length - 1) throw lastError;
+                }
             }
-            const anyFlash = models.find(m => m.includes('flash') && !m.includes('image') && !m.includes('tts'));
-            return anyFlash || models[0] || DEFAULT_MODEL;
+            throw lastError || new Error('Brak dostępnych modeli.');
         }
 
         async function testApiConnection() {
@@ -286,42 +328,28 @@
             }
             saveApiKey();
             resBox.style.color = "#ffd700";
-            resBox.textContent = "⏳ Etap 1/2: Szukam najszybszego modelu Flash dla Twojego klucza...";
+            resBox.textContent = "⏳ Testuję połączenie (z automatycznym wyborem wolnego modelu)...";
             const t0 = performance.now();
             const ctrl = new AbortController();
-            const tid = setTimeout(() => ctrl.abort(), 12000);
+            const tid = setTimeout(() => ctrl.abort(), 14000);
 
             try {
-                const detectedModel = await detectBestFlashModel(apiKey, ctrl.signal);
-                localStorage.setItem('gemini_detected_model', detectedModel);
-                updateModelLabel();
-
-                resBox.textContent = `⏳ Etap 2/2: Testuję model ${detectedModel}...`;
-                const genConfig = { max_output_tokens: 10 };
-                if (detectedModel.includes('2.5') || detectedModel.includes('3.')) {
-                    genConfig.thinkingConfig = { thinkingBudget: 0 };
-                }
-
-                const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${detectedModel}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    signal: ctrl.signal,
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: "OK" }] }],
-                        generationConfig: genConfig
-                    })
-                });
+                const { model } = await callGeminiWithFallback(
+                    apiKey,
+                    [{ text: "OK" }],
+                    false,
+                    ctrl.signal,
+                    (msg) => { resBox.textContent = "⏳ " + msg; }
+                );
                 clearTimeout(tid);
-                const data = await resp.json();
                 const sec = ((performance.now() - t0) / 1000).toFixed(2);
-                if (!resp.ok) throw new Error(data.error?.message || `HTTP ${resp.status}`);
                 resBox.style.color = "#4ade80";
-                resBox.textContent = `✅ Połączenie działa! Model: ${detectedModel} | Czas: ${sec} s`;
+                resBox.textContent = `✅ Połączenie działa! Aktywny model: ${model} | Czas odpowiedzi: ${sec} s`;
             } catch (e) {
                 clearTimeout(tid);
                 resBox.style.color = "#f87171";
                 if (e.name === 'AbortError') {
-                    resBox.textContent = "❌ Brak odpowiedzi serwera Google (timeout 12s).\nSprawdź: wyłącz Prywatny DNS / VPN w telefonie lub przełącz Wi-Fi ↔ Dane komórkowe.\nWskazówka: Tryb '⚡ SZYBKI TEKST + OFFLINE' działa nawet bez połączenia z API!";
+                    resBox.textContent = "❌ Brak odpowiedzi serwera (timeout 14s). Sprawdź internet lub użyj trybu '⚡ SZYBKI TEKST + OFFLINE'.";
                 } else {
                     resBox.textContent = `❌ Błąd API: ${e.message}`;
                 }
@@ -588,7 +616,7 @@
             }
         }
 
-        // ================= HYBRID VOICE INPUT (FAST SPEECH-TO-TEXT + OFFLINE + AUDIO AI) =================
+        // ================= HYBRID VOICE INPUT =================
         function cancelActiveAIRequest() {
             if (activeAbortController) {
                 activeAbortController.abort();
@@ -649,7 +677,7 @@
 
                 speechRecognition.onerror = (e) => {
                     if (e.error === 'not-allowed') {
-                        alert("Brak dostępu do mikrofonu (Permission denied). Upewnij się, że strona otwarta jest przez https:// i mikrofon ma uprawnienia.");
+                        alert("Brak dostępu do mikrofonu (Permission denied).");
                     } else if (e.error !== 'aborted') {
                         status.textContent = '⚠️ Błąd rozpoznawania mowy: ' + e.error;
                     }
@@ -698,7 +726,6 @@
             const cancelBtn = document.getElementById('btn-cancel-ai');
             const status = document.getElementById('voice-status');
 
-            // Jeśli brak klucza API, od razu użyj błyskawicznego parsera offline
             if (!apiKey) {
                 const offlineData = parsePolishDictationOffline(spokenText);
                 applyAIDataToForm(offlineData);
@@ -711,11 +738,12 @@
             cancelBtn.style.display = 'block';
 
             let waitSec = 0;
-            status.textContent = `📤 Wysyłam sam tekst (${spokenText.length} znaków)... 0s`;
+            let phaseMsg = `Analiza tekstu AI...`;
+            status.textContent = `📤 ${phaseMsg} 0s`;
             clearInterval(aiWaitTimerInterval);
             aiWaitTimerInterval = setInterval(() => {
                 waitSec++;
-                status.textContent = `⏳ Analiza tekstu AI... ${waitSec}s / 18s`;
+                status.textContent = `⏳ ${phaseMsg} ${waitSec}s`;
             }, 1000);
 
             activeAbortController = new AbortController();
@@ -724,41 +752,22 @@
             }, AI_TIMEOUT_MS);
 
             try {
-                const model = getActiveModel();
-                const genConfig = {
-                    response_mime_type: "application/json",
-                    temperature: 0.1,
-                    max_output_tokens: 400
-                };
-                if (model.includes('2.5') || model.includes('3.')) {
-                    genConfig.thinkingConfig = { thinkingBudget: 0 };
-                }
+                const { text: rawText, model } = await callGeminiWithFallback(
+                    apiKey,
+                    [{ text: `${getGeminiPrompt()}\n\nWypowiedź magazyniera: "${spokenText}"` }],
+                    true,
+                    activeAbortController.signal,
+                    (msg) => { phaseMsg = msg; }
+                );
 
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    signal: activeAbortController.signal,
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [{ text: `${getGeminiPrompt()}\n\nWypowiedź magazyniera: "${spokenText}"` }]
-                        }],
-                        generationConfig: genConfig
-                    })
-                });
-
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error?.message || `HTTP ${response.status}`);
-
-                const rawText = result.candidates[0].content.parts[0].text;
                 const parsed = JSON.parse(cleanJsonResponse(rawText));
                 applyAIDataToForm(parsed);
                 status.textContent = `✅ Gotowe w ${waitSec}s (${model})! Sprawdź podświetlone pola.`;
             } catch (err) {
-                // Automatyczny ratunek offline w razie timeoutu sieci!
                 const offlineData = parsePolishDictationOffline(spokenText);
                 applyAIDataToForm(offlineData);
-                status.textContent = '⚡ Sieć niedostępna – wypełniono automatycznie w trybie OFFLINE!';
-                showToast('⚡ Brak odpowiedzi z sieci – użyto lokalnego parsera offline.');
+                status.textContent = '⚡ Serwer AI przeciążony – wypełniono lokalnie w trybie OFFLINE!';
+                showToast('⚡ Użyto lokalnego parsera offline.');
             } finally {
                 clearTimeout(timeoutId);
                 clearInterval(aiWaitTimerInterval);
@@ -840,7 +849,6 @@
                     else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
                     else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
 
-                    // Kompresja 16 kbps (2 KB/s) zoptymalizowana pod mowę ludzką
                     const options = { audioBitsPerSecond: 16000 };
                     if (mimeType) options.mimeType = mimeType;
 
@@ -915,18 +923,18 @@
             const cancelBtn = document.getElementById('btn-cancel-ai');
             const status = document.getElementById('voice-status');
             const sizeKB = Math.max(1, Math.round(audioBlob.size / 1024));
-            const model = getActiveModel();
 
             btn.classList.add('processing');
             btn.innerHTML = '⏳ ANALIZUJĘ AUDIO (AI)...';
             cancelBtn.style.display = 'block';
 
             let waitSec = 0;
-            status.textContent = `📤 Wysyłam nagranie (${sizeKB} KB → ${model})... 0s / 18s`;
+            let phaseMsg = `Wysyłam nagranie (${sizeKB} KB)...`;
+            status.textContent = `📤 ${phaseMsg} 0s`;
             clearInterval(aiWaitTimerInterval);
             aiWaitTimerInterval = setInterval(() => {
                 waitSec++;
-                status.textContent = `⏳ Przetwarzam nagranie (${sizeKB} KB)... ${waitSec}s / 18s`;
+                status.textContent = `⏳ ${phaseMsg} ${waitSec}s`;
             }, 1000);
 
             activeAbortController = new AbortController();
@@ -936,45 +944,23 @@
 
             try {
                 const base64Audio = await blobToBase64(audioBlob);
-                const genConfig = {
-                    response_mime_type: "application/json",
-                    temperature: 0.1,
-                    max_output_tokens: 400
-                };
-                if (model.includes('2.5') || model.includes('3.')) {
-                    genConfig.thinkingConfig = { thinkingBudget: 0 };
-                }
+                const { text: rawText, model } = await callGeminiWithFallback(
+                    apiKey,
+                    [
+                        { text: getGeminiPrompt() },
+                        { inline_data: { mime_type: mimeType, data: base64Audio } }
+                    ],
+                    true,
+                    activeAbortController.signal,
+                    (msg) => { phaseMsg = msg; }
+                );
 
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    signal: activeAbortController.signal,
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [
-                                { text: getGeminiPrompt() },
-                                { inline_data: { mime_type: mimeType, data: base64Audio } }
-                            ]
-                        }],
-                        generationConfig: genConfig
-                    })
-                });
-
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error?.message || `Błąd HTTP ${response.status}`);
-
-                const rawText = result.candidates[0].content.parts[0].text;
                 const parsed = JSON.parse(cleanJsonResponse(rawText));
                 applyAIDataToForm(parsed);
-                status.textContent = `✅ Gotowe w ${waitSec}s! Dane wpisane – sprawdź podświetlone pola.`;
+                status.textContent = `✅ Gotowe w ${waitSec}s (${model})! Sprawdź podświetlone pola.`;
             } catch (err) {
-                if (err.name === 'AbortError') {
-                    status.textContent = '⏱️ Timeout (18s) – przełącz na przycisk "⚡ SZYBKI TEKST + OFFLINE" powyżej.';
-                    showToast('⏱️ Timeout – użyj trybu "⚡ SZYBKI TEKST + OFFLINE".');
-                } else {
-                    status.textContent = '❌ Błąd: ' + err.message;
-                    showToast('❌ Błąd: ' + err.message);
-                }
+                status.textContent = '❌ ' + (err.name === 'AbortError' ? 'Przekroczono czas.' : err.message) + ' – użyj trybu "⚡ SZYBKI TEKST + OFFLINE".';
+                showToast('⚠️ Użyj trybu "⚡ SZYBKI TEKST + OFFLINE".');
             } finally {
                 clearTimeout(timeoutId);
                 clearInterval(aiWaitTimerInterval);
@@ -997,48 +983,30 @@
 
             const ocrBtn = document.getElementById(`btn-ocr-${tabId}`);
             const origText = ocrBtn.innerHTML;
-            ocrBtn.innerHTML = '⏳ ANALIZUJĘ ZDJĘCIE (MAX 18S)...';
+            ocrBtn.innerHTML = '⏳ ANALIZUJĘ ZDJĘCIE (AUTO-MODEL)...';
             ocrBtn.disabled = true;
 
             const ctrl = new AbortController();
             const timeoutId = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
-            const model = getActiveModel();
 
             try {
                 const resizedBase64 = await resizeImageToBase64(fileInput.files[0], 1100);
-                const genConfig = {
-                    response_mime_type: "application/json",
-                    temperature: 0.1,
-                    max_output_tokens: 400
-                };
-                if (model.includes('2.5') || model.includes('3.')) {
-                    genConfig.thinkingConfig = { thinkingBudget: 0 };
-                }
+                const { text: rawText, model } = await callGeminiWithFallback(
+                    apiKey,
+                    [
+                        { text: getGeminiPrompt() },
+                        { inline_data: { mime_type: 'image/jpeg', data: resizedBase64 } }
+                    ],
+                    true,
+                    ctrl.signal,
+                    (msg) => { ocrBtn.innerHTML = '⏳ ' + msg; }
+                );
 
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    signal: ctrl.signal,
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [
-                                { text: getGeminiPrompt() },
-                                { inline_data: { mime_type: 'image/jpeg', data: resizedBase64 } }
-                            ]
-                        }],
-                        generationConfig: genConfig
-                    })
-                });
-
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error?.message || `Błąd HTTP ${response.status}`);
-
-                const rawText = result.candidates[0].content.parts[0].text;
                 const parsed = JSON.parse(cleanJsonResponse(rawText));
                 applyAIDataToForm(parsed, tabId);
-                showToast("✅ Odczytano dane ze zdjęcia WZ!");
+                showToast(`✅ Odczytano dane ze zdjęcia (${model})!`);
             } catch (err) {
-                const msg = err.name === 'AbortError' ? 'Przekroczono czas (18s) – słaby zasięg.' : err.message;
+                const msg = err.name === 'AbortError' ? 'Przekroczono czas – słaby zasięg.' : err.message;
                 showToast("❌ Błąd odczytu zdjęcia: " + msg);
             } finally {
                 clearTimeout(timeoutId);
